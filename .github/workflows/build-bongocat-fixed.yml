@@ -1,0 +1,56 @@
+name: Build Bongo Cat APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find and unpack Android project
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' | head -n 1)"
+            if [ -z "$ZIP_FILE" ]; then
+              echo "::error::Не найден ZIP проекта. Загрузи BongoCat-Android-Input-v2.zip в корень репозитория."
+              exit 1
+            fi
+            echo "Распаковываю $ZIP_FILE"
+            mkdir -p project_unpacked
+            unzip -oq "$ZIP_FILE" -d project_unpacked
+            ROOT="$(find project_unpacked -type f \\( -name settings.gradle -o -name settings.gradle.kts \\) -printf '%h\\n' | head -n 1)"
+            if [ -z "$ROOT" ]; then
+              echo "::error::В ZIP не найден settings.gradle"
+              find project_unpacked -maxdepth 3 -type f | head -n 40
+              exit 1
+            fi
+            cp -a "$ROOT"/. .
+          fi
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f app/build.gradle || test -f app/build.gradle.kts
+          echo "Корень Android-проекта найден:"
+          ls -la
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BongoCat-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
